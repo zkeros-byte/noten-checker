@@ -1,0 +1,24 @@
+name: Check TAM Grades
+on:
+  schedule:
+    - cron: "*/30 * * * *"   # alle 30 Minuten
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+      - run: pip install requests
+      - name: Run checker
+        env:
+          COOKIE_USERNAME: ${{ secrets.COOKIE_USERNAME }}
+          COOKIE_SCHOOL:   ${{ secrets.COOKIE_SCHOOL }}
+          COOKIE_STURMUSER:${{ secrets.COOKIE_STURMUSER }}
+          COOKIE_SESSION:  ${{ secrets.COOKIE_SESSION }}
+          GRADES_PAYLOAD:  ${{ secrets.GRADES_PAYLOAD }}
+          NTFY_TOPIC:      ${{ secrets.NTFY_TOPIC }}
+        run: python check_grades.py
