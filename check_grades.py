@@ -1,6 +1,6 @@
-import requests
-import hashlib
 import os
+import hashlib
+import requests
 
 URL = "https://intranet.tam.ch/bmz/gradebook/ajax-list-get-grades"
 
@@ -14,48 +14,69 @@ COOKIES = {
 DATA = {
     "studentId": "11884169",
     "courseId": "1167368",
-    "periodId": "83"
+    "periodId": "83",
 }
 
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
 
+# Test-/Debug-Schalter (werden vom Workflow gesetzt)
+FORCE_NOTIFY = os.getenv("FORCE_NOTIFY", "0") == "1"   # erzwingt Push
+FAKE_CHANGE  = os.getenv("FAKE_CHANGE", "0") == "1"    # haengt TEST an Antwort an
+
+LAST_HASH_FILE = "last_hash.txt"  # wird via Artifact zwischen Laeufen gespeichert
+
 def fetch_grades():
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
-    r = requests.post(URL, data=DATA, cookies=COOKIES, headers=headers)
+    r = requests.post(URL, data=DATA, cookies=COOKIES, headers=headers, timeout=30)
     r.raise_for_status()
     return r.text
 
-def hash_text(text):
+def sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
-def send_discord_message(message):
+def send_discord(msg: str):
     if not DISCORD_WEBHOOK:
-        print("Discord Webhook fehlt!")
+        print("WARN: DISCORD_WEBHOOK fehlt")
         return
-    payload = {"content": message}
+    resp = requests.post(DISCORD_WEBHOOK, json={"content": msg})
     try:
-        requests.post(DISCORD_WEBHOOK, json=payload)
+        resp.raise_for_status()
         print("Discord Nachricht gesendet.")
     except Exception as e:
-        print("Fehler beim Senden:", e)
+        print("Fehler beim Senden an Discord:", e, "Status:", resp.status_code, "Body:", resp.text)
 
 def main():
-    html = fetch_grades() + "TEST"
-    current_hash = hash_text(html)
-    last_hash_file = "/tmp/last_hash.txt"  # wird im Cloud-System zwischengespeichert
+    html = fetch_grades()
+    if FAKE_CHANGE:
+        html += "TESTAENDERUNG"
+        print("FAKE_CHANGE aktiv → Antworttext kuenstlich geaendert.")
 
+    current_hash = sha256(html)
     last_hash = ""
-    if os.path.exists(last_hash_file):
-        with open(last_hash_file, "r") as f:
-            last_hash = f.read().strip()
 
-    if current_hash != last_hash:
-        print("Änderung erkannt – sende Nachricht")
-        send_discord_message("📢 **Neue Note oder Änderung im Intranet!**")
-        with open(last_hash_file, "w") as f:
-            f.write(current_hash)
+    if os.path.exists(LAST_HASH_FILE):
+        with open(LAST_HASH_FILE, "r") as f:
+            last_hash = f.read().strip()
+        print("Vorhandener last_hash:", last_hash)
     else:
-        print("Keine Änderung erkannt.")
+        print("Kein last_hash gefunden (erster Lauf oder kein Artifact).")
+
+    print("Neuer Hash:", current_hash)
+
+    changed = (current_hash != last_hash)
+    print("Geaendert? ->", changed)
+
+    if FORCE_NOTIFY:
+        print("FORCE_NOTIFY aktiv → Push wird unabhängig vom Vergleich gesendet.")
+        send_discord("Erzwungener Test-Push (FORCE_NOTIFY=1).")
+
+    if changed:
+        send_discord("Neue Note oder Aenderung erkannt (Hash unterschiedlich).")
+        with open(LAST_HASH_FILE, "w") as f:
+            f.write(current_hash)
+        print("last_hash.txt aktualisiert.")
+    else:
+        print("Keine Aenderung erkannt (Hash gleich).")
 
 if __name__ == "__main__":
     main()
