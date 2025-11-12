@@ -1,68 +1,66 @@
-import os, hashlib, requests, json
+import requests
+import hashlib
+import os
 
+# === KONFIGURATION ===
 URL = "https://intranet.tam.ch/bmz/gradebook/ajax-list-get-grades"
 
-# Aus GitHub Secrets / Env
+# Diese Werte holt GitHub aus Secrets (siehe weiter unten)
 COOKIES = {
-    "username": os.environ["COOKIE_USERNAME"],
-    "school": os.environ["COOKIE_SCHOOL"],
-    "sturmuser": os.environ["COOKIE_STURMUSER"],
-    "sturmsession": os.environ["COOKIE_SESSION"],
+    "username": os.getenv("COOKIE_USERNAME"),
+    "school": os.getenv("COOKIE_SCHOOL"),
+    "sturmuser": os.getenv("COOKIE_STURMUSER"),
+    "sturmsession": os.getenv("COOKIE_SESSION"),
 }
-RAW_PAYLOAD = os.environ["GRADES_PAYLOAD"]  # exakt so, wie in DevTools kopiert
-NTFY_TOPIC = os.environ["NTFY_TOPIC"]       # z. B. tam-grades-salmane
 
-LAST_HASH_FILE = "last_hash.txt"
+# Formulardaten (Payload aus deinem Screenshot)
+DATA = {
+    "studentId": "11884169",
+    "courseId": "1167368",
+    "periodId": "83"
+}
+
+DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
+# =====================
+
 
 def fetch_grades():
-    headers = {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "X-Requested-With": "XMLHttpRequest",
-        # hilft oft:
-        "Referer": "https://intranet.tam.ch/bmz/default/gradebook/index",
-        "Accept": "*/*",
-        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari",
-    }
-    r = requests.post(URL, headers=headers, cookies=COOKIES, data=RAW_PAYLOAD, timeout=30)
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    r = requests.post(URL, data=DATA, cookies=COOKIES, headers=headers)
     r.raise_for_status()
     return r.text
 
-def notify(text):
-    try:
-        requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=text.encode("utf-8"), timeout=15)
-    except Exception as e:
-        print("ntfy Fehler:", e)
 
-def sha256(text: str) -> str:
+def hash_text(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
+
+def send_discord_message(msg):
+    payload = {"content": msg}
+    try:
+        r = requests.post(DISCORD_WEBHOOK, json=payload)
+        r.raise_for_status()
+        print("Discord Nachricht gesendet.")
+    except Exception as e:
+        print("Fehler beim Senden an Discord:", e)
+
+
 def main():
-    body = fetch_grades()
-    h = sha256(body)
+    html = fetch_grades()
+    current_hash = hash_text(html)
+    last_file = "last_hash.txt"
 
-    last = ""
-    if os.path.exists(LAST_HASH_FILE):
-        last = open(LAST_HASH_FILE, "r", encoding="utf-8").read().strip()
+    last_hash = ""
+    if os.path.exists(last_file):
+        last_hash = open(last_file).read().strip()
 
-    if h != last:
-        open(LAST_HASH_FILE, "w", encoding="utf-8").write(h)
-        # Optional: versuche kurz die Anzahl Items/Notes zu extrahieren, falls JSON
-        excerpt = ""
-        try:
-            data = json.loads(body)
-            if isinstance(data, dict):
-                # haeufig gibt es keys wie "data" oder "grades"; wir versuchen beides
-                for k in ("data", "grades", "items", "rows"):
-                    if k in data and isinstance(data[k], list):
-                        excerpt = f"Neue/veraenderte Noten erkannt. Anzahl Eintraege: {len(data[k])}"
-                        break
-        except Exception:
-            pass
-
-        notify(excerpt or "Neue/veraenderte Noten erkannt (Gradebook).")
-        print("Aenderung erkannt — Push gesendet.")
+    if current_hash != last_hash:
+        open(last_file, "w").write(current_hash)
+        send_discord_message("📢 **Neue Note oder Änderung im Intranet!**")
+        print("Änderung erkannt — Nachricht gesendet.")
     else:
-        print("Keine Aenderung.")
+        print("Keine Änderung erkannt.")
+
 
 if __name__ == "__main__":
     main()
