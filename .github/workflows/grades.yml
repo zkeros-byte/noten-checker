@@ -1,24 +1,30 @@
-name: Check TAM Grades
+name: Check Intranet Grades
+
 on:
   schedule:
-    - cron: "*/30 * * * *"   # alle 30 Minuten
+    - cron: "*/30 * * * *"  # alle 30 Minuten prüfen
   workflow_dispatch:
 
 jobs:
-  run:
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
         with:
           python-version: "3.11"
-      - run: pip install requests
-      - name: Run checker
+
+      - name: Install packages
+        run: pip install requests
+
+      - name: Run grade checker
         env:
           COOKIE_USERNAME: ${{ secrets.COOKIE_USERNAME }}
-          COOKIE_SCHOOL:   ${{ secrets.COOKIE_SCHOOL }}
-          COOKIE_STURMUSER:${{ secrets.COOKIE_STURMUSER }}
-          COOKIE_SESSION:  ${{ secrets.COOKIE_SESSION }}
-          GRADES_PAYLOAD:  ${{ secrets.GRADES_PAYLOAD }}
-          NTFY_TOPIC:      ${{ secrets.NTFY_TOPIC }}
-        run: python check_grades.py
+          COOKIE_SCHOOL: ${{ secrets.COOKIE_SCHOOL }}
+          COOKIE_STURMUSER: ${{ secrets.COOKIE_STURMUSER }}
+          COOKIE_SESSION: ${{ secrets.COOKIE_SESSION }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          python check_grades.py
