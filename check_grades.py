@@ -1,6 +1,8 @@
-import os
-import hashlib
 import requests
+import hashlib
+import os
+import json
+import re
 
 URL = "https://intranet.tam.ch/bmz/gradebook/ajax-list-get-grades"
 
@@ -14,69 +16,76 @@ COOKIES = {
 DATA = {
     "studentId": "11884169",
     "courseId": "1167368",
-    "periodId": "83",
+    "periodId": "83"
 }
 
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
 
-# Test-/Debug-Schalter (werden vom Workflow gesetzt)
-FORCE_NOTIFY = os.getenv("FORCE_NOTIFY", "0") == "1"   # erzwingt Push
-FAKE_CHANGE  = os.getenv("FAKE_CHANGE", "0") == "1"    # haengt TEST an Antwort an
-
-LAST_HASH_FILE = "last_hash.txt"  # wird via Artifact zwischen Laeufen gespeichert
 
 def fetch_grades():
+    """Hole die Daten vom Intranet."""
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
-    r = requests.post(URL, data=DATA, cookies=COOKIES, headers=headers, timeout=30)
+    r = requests.post(URL, data=DATA, cookies=COOKIES, headers=headers)
     r.raise_for_status()
     return r.text
 
-def sha256(text: str) -> str:
+
+def extract_relevant_text(raw_html):
+    """
+    Filtere nur die echten Noten-Daten heraus,
+    um technische Änderungen (z. B. Session-IDs, Zeitstempel) zu ignorieren.
+    """
+    # Versuche, nur JSON-ähnliche Teile zu finden, die "grade" enthalten
+    grades = re.findall(r'"grade"\s*:\s*"[^"]*"', raw_html)
+    subjects = re.findall(r'"subject"\s*:\s*"[^"]*"', raw_html)
+    combined = "\n".join(grades + subjects)
+    return combined
+
+
+def hash_text(text):
+    """Erzeuge Hash für den Vergleich."""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
-def send_discord(msg: str):
+
+def send_discord_message(message):
+    """Sende Nachricht an Discord."""
     if not DISCORD_WEBHOOK:
-        print("WARN: DISCORD_WEBHOOK fehlt")
+        print("Discord Webhook fehlt!")
         return
-    resp = requests.post(DISCORD_WEBHOOK, json={"content": msg})
+    payload = {"content": message}
     try:
-        resp.raise_for_status()
+        requests.post(DISCORD_WEBHOOK, json=payload, timeout=10)
         print("Discord Nachricht gesendet.")
     except Exception as e:
-        print("Fehler beim Senden an Discord:", e, "Status:", resp.status_code, "Body:", resp.text)
+        print("Fehler beim Senden:", e)
+
 
 def main():
-    html = fetch_grades()
-    if FAKE_CHANGE:
-        html += "TESTAENDERUNG"
-        print("FAKE_CHANGE aktiv → Antworttext kuenstlich geaendert.")
+    raw = fetch_grades()
+    filtered = extract_relevant_text(raw)
+    current_hash = hash_text(filtered)
+    last_file = "last_hash.txt"
 
-    current_hash = sha256(html)
-    last_hash = ""
-
-    if os.path.exists(LAST_HASH_FILE):
-        with open(LAST_HASH_FILE, "r") as f:
+    # Prüfe, ob Hash-Datei existiert (vom letzten Lauf)
+    if os.path.exists(last_file):
+        with open(last_file, "r") as f:
             last_hash = f.read().strip()
-        print("Vorhandener last_hash:", last_hash)
     else:
-        print("Kein last_hash gefunden (erster Lauf oder kein Artifact).")
+        last_hash = ""
 
-    print("Neuer Hash:", current_hash)
-
-    changed = (current_hash != last_hash)
-    print("Geaendert? ->", changed)
-
-    if FORCE_NOTIFY:
-        print("FORCE_NOTIFY aktiv → Push wird unabhängig vom Vergleich gesendet.")
-        send_discord("Erzwungener Test-Push (FORCE_NOTIFY=1).")
-
-    if changed:
-        send_discord("Neue Note oder Aenderung erkannt (Hash unterschiedlich).")
-        with open(LAST_HASH_FILE, "w") as f:
+    if current_hash != last_hash:
+        # Wenn es keine alte Datei gibt, ist das der erste Lauf → keine Nachricht
+        if last_hash == "":
+            print("Erster Lauf – Hash gespeichert, aber keine Nachricht gesendet.")
+        else:
+            print("Änderung erkannt – sende Nachricht.")
+            send_discord_message("📢 **Neue oder geänderte Note im Intranet!**")
+        # Hash speichern
+        with open(last_file, "w") as f:
             f.write(current_hash)
-        print("last_hash.txt aktualisiert.")
     else:
-        print("Keine Aenderung erkannt (Hash gleich).")
+        print("Keine Änderung erkannt.")
+
 
 if __name__ == "__main__":
     main()
