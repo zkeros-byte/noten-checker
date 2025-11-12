@@ -2,7 +2,7 @@ name: Check Intranet Grades
 
 on:
   schedule:
-    - cron: "*/5 * * * *"  # alle 5 Minuten prüfen
+    - cron: "*/10 * * * *"  # alle 10 Minuten prüfen
   workflow_dispatch:
 
 jobs:
@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Python
@@ -28,4 +28,5 @@ jobs:
           COOKIE_STURMUSER: ${{ secrets.COOKIE_STURMUSER }}
           COOKIE_SESSION: ${{ secrets.COOKIE_SESSION }}
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-        run: python check_grades.py
+        run: |
+          python check_grades.py
