@@ -40,7 +40,7 @@ def send_discord_message(message):
         print("Fehler beim Senden:", e)
 
 def main():
-    html = fetch_grades()
+    html = fetch_grades() + "TEST"
     current_hash = hash_text(html)
     last_hash_file = "/tmp/last_hash.txt"  # wird im Cloud-System zwischengespeichert
 
