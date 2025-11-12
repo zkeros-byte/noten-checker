@@ -2,8 +2,17 @@ name: Check Intranet Grades
 
 on:
   schedule:
-    - cron: "*/10 * * * *"  # alle 10 Minuten prüfen
+    - cron: "*/10 * * * *"   # alle 10 Minuten
   workflow_dispatch:
+    inputs:
+      force_notify:
+        description: 'Sende immer eine Test-Nachricht'
+        type: boolean
+        default: false
+      fake_change:
+        description: 'Simuliere eine Aenderung (TESTAENDERUNG)'
+        type: boolean
+        default: false
 
 jobs:
   check:
@@ -21,6 +30,20 @@ jobs:
       - name: Install dependencies
         run: pip install requests
 
+      # Last Hash aus vorherigem Lauf laden (falls vorhanden)
+      - name: Lade letzten Hash (Artifact)
+        uses: actions/download-artifact@v4
+        with:
+          name: last-hash
+        continue-on-error: true
+
+      - name: Zeige vorhandene Dateien (Debug)
+        run: |
+          echo "Arbeitsverzeichnis:"
+          ls -la
+          echo "Inhalt last_hash.txt (falls vorhanden):"
+          if [ -f last_hash.txt ]; then cat last_hash.txt; else echo "(keine last_hash.txt gefunden)"; fi
+
       - name: Run grade checker
         env:
           COOKIE_USERNAME: ${{ secrets.COOKIE_USERNAME }}
@@ -28,5 +51,14 @@ jobs:
           COOKIE_STURMUSER: ${{ secrets.COOKIE_STURMUSER }}
           COOKIE_SESSION: ${{ secrets.COOKIE_SESSION }}
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-        run: |
-          python check_grades.py
+          FORCE_NOTIFY: ${{ inputs.force_notify && '1' || '0' }}
+          FAKE_CHANGE:  ${{ inputs.fake_change  && '1' || '0' }}
+        run: python check_grades.py
+
+      # Neuen Hash fuer den naechsten Lauf speichern (nur wenn Datei existiert)
+      - name: Speicher Hash als Artifact
+        if: ${{ hashFiles('last_hash.txt') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: last-hash
+          path: last_hash.txt
