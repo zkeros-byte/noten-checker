@@ -1,66 +1,45 @@
-import requests
-import hashlib
 import os
-
-# === KONFIGURATION ===
-URL = "https://intranet.tam.ch/bmz/gradebook/ajax-list-get-grades"
-
-# Diese Werte holt GitHub aus Secrets (siehe weiter unten)
-COOKIES = {
-    "username": os.getenv("COOKIE_USERNAME"),
-    "school": os.getenv("COOKIE_SCHOOL"),
-    "sturmuser": os.getenv("COOKIE_STURMUSER"),
-    "sturmsession": os.getenv("COOKIE_SESSION"),
-}
-
-# Formulardaten (Payload aus deinem Screenshot)
-DATA = {
-    "studentId": "11884169",
-    "courseId": "1167368",
-    "periodId": "83"
-}
-
-DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
-# =====================
-
+import hashlib
+import requests
 
 def fetch_grades():
-    headers = {"Content-Type": "application/x-www-form-urlencoded"}
-    r = requests.post(URL, data=DATA, cookies=COOKIES, headers=headers)
-    r.raise_for_status()
-    return r.text
+    url = "https://intranet.tam.ch/bmz/gradebook/ajax-list-get-grades"
+    payload = {
+        "studentId": "11884169",
+        "courseId": "1167368",
+        "periodId": "83"
+    }
+    cookies = {
+        "username": os.getenv("COOKIE_USERNAME"),
+        "school": os.getenv("COOKIE_SCHOOL"),
+        "sturmuser": os.getenv("COOKIE_STURMUSER"),
+        "sturmsession": os.getenv("COOKIE_SESSION")
+    }
+    response = requests.post(url, data=payload, cookies=cookies)
+    return response.text
 
-
-def hash_text(text):
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def send_discord_message(msg):
-    payload = {"content": msg}
-    try:
-        r = requests.post(DISCORD_WEBHOOK, json=payload)
-        r.raise_for_status()
-        print("Discord Nachricht gesendet.")
-    except Exception as e:
-        print("Fehler beim Senden an Discord:", e)
-
+def send_discord_message(message):
+    webhook = os.getenv("DISCORD_WEBHOOK")
+    requests.post(webhook, json={"content": message})
 
 def main():
     html = fetch_grades()
-    current_hash = hash_text(html)
-    last_file = "last_hash.txt"
+    current_hash = hashlib.sha256(html.encode()).hexdigest()
 
-    last_hash = ""
-    if os.path.exists(last_file):
-        last_hash = open(last_file).read().strip()
+    # Prüfen, ob es schon eine gespeicherte Datei gibt
+    if os.path.exists("last_hash.txt"):
+        with open("last_hash.txt", "r") as f:
+            last_hash = f.read().strip()
+    else:
+        last_hash = ""
 
     if current_hash != last_hash:
-        open(last_file, "w").write(current_hash)
-        send_discord_message("📢 **Neue Note oder Änderung im Intranet!**")
-        print("Änderung erkannt — Nachricht gesendet.")
+        print("Änderung erkannt – sende Nachricht")
+        send_discord_message("📢 Neue Note oder Änderung im Intranet!")
+        with open("last_hash.txt", "w") as f:
+            f.write(current_hash)
     else:
         print("Keine Änderung erkannt.")
-
 
 if __name__ == "__main__":
     main()
