@@ -8,15 +8,17 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.11"
 
-      - name: Install packages
+      - name: Install dependencies
         run: pip install requests
 
       - name: Run grade checker
@@ -26,5 +28,4 @@ jobs:
           COOKIE_STURMUSER: ${{ secrets.COOKIE_STURMUSER }}
           COOKIE_SESSION: ${{ secrets.COOKIE_SESSION }}
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-        run: |
-          python check_grades.py
+        run: python check_grades.py
