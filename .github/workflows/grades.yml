@@ -2,7 +2,7 @@ name: Check Intranet Grades
 
 on:
   schedule:
-    - cron: "*/30 * * * *"  # alle 30 Minuten prüfen
+    - cron: "*/5 * * * *"  # alle 5 Minuten prüfen
   workflow_dispatch:
 
 jobs:
